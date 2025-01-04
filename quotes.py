@@ -335,9 +335,46 @@ class GerenciadorCitacoes:
         self.cores = cores_escuras if self.tema_escuro else cores_claras
         self.atualizar_cores()
 
+    def adicionar_ao_historico(self, citacao):
+        """Adiciona uma citação ao histórico com ambas versões de texto"""
+        if not citacao:
+            return
+
+        # Verifica se a citação já existe no histórico
+        for hist in self.historico:
+            if (hist.get('texto') == citacao.get('texto') and
+                    hist.get('autor') == citacao.get('autor')):
+                return  # Não adiciona duplicatas
+
+        try:
+            # Cria uma cópia com timestamp
+            citacao_com_timestamp = citacao.copy()
+            citacao_com_timestamp['timestamp'] = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S")
+
+            # Garante que temos ambas versões do texto
+            if 'texto_en' not in citacao_com_timestamp:
+                citacao_com_timestamp['texto_en'] = citacao_com_timestamp.get(
+                    'texto', '')
+            if 'texto_pt' not in citacao_com_timestamp:
+                # Usa o serviço de tradução
+                from interface import InterfaceCitacoes
+                interface_temp = InterfaceCitacoes(self)
+                citacao_com_timestamp['texto_pt'] = interface_temp.translate_quotes(
+                    citacao_com_timestamp.get('texto', ''))
+
+            # Adiciona ao início do histórico
+            self.historico.insert(0, citacao_com_timestamp)
+            # Mantém apenas as últimas 50 citações
+            self.historico = self.historico[:50]
+            # Salva o histórico imediatamente
+            self.salvar_historico()
+
+        except Exception as e:
+            print(f"Erro ao adicionar ao histórico: {str(e)}")
+            return None
+
 # Interface gráfica
-
-
 
 
 # Ponto de entrada do programa

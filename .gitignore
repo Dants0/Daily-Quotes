@@ -1,0 +1,5 @@
+# Ignorar todos os arquivos JSON
+*.json
+
+# Ignorar arquivos Python compilados
+__pycache__/

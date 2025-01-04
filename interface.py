@@ -1,6 +1,7 @@
 # Importando bibliotecas necessárias
 import tkinter as tk
 from tkinter import ttk
+import customtkinter as ctk  # Adiciona customtkinter
 import json
 import requests
 from datetime import datetime
@@ -9,40 +10,34 @@ import schedule
 import time
 import os
 
+# Configura o tema padrão do customtkinter
+ctk.set_appearance_mode("dark")  # Modos: "dark", "light"
+ctk.set_default_color_theme("blue")  # Temas: "blue", "dark-blue", "green"
+
 
 class InterfaceCitacoes:
     def __init__(self, gerenciador):
         self.gerenciador = gerenciador
-        self.root = tk.Tk()
+        self.root = ctk.CTk()
         self.root.title("Daily Quotes")
-        self.root.geometry("600x400")
+        self.root.geometry("700x400")
 
-        # Inicializar variável para o combobox
+        # Inicializa variáveis importantes
         self.genero_var = tk.StringVar()
+        self.citacao_atual = None
+        self.history_window = None
+        self.is_portuguese = True
+        self.tema_escuro = ctk.get_appearance_mode() == "dark"
 
-        # Carregar última categoria, citação e tema
+        # Carrega configurações
         self.carregar_ultimo_estado()
-
-        # Configuração de fontes
-        self.citacao_font = ('Palatino', 14, 'italic')
-        self.autor_font = ('Palatino', 12, 'bold')
-
-        # Configura o fechamento normal da janela
-        self.root.protocol("WM_DELETE_WINDOW", self.ao_fechar)
-
-        # Configura o estilo inicial
-        style = ttk.Style()
-        style.theme_use('clam')
-
-        # Carrega os gêneros antes de criar os widgets
         self.carregar_generos()
         self.criar_widgets()
-
-        # Aplica o tema carregado
         self.definir_cores()
-
-        # Centraliza a janela após criar todos os widgets
         self.root.eval('tk::PlaceWindow . center')
+
+        # Configura o handler para quando a janela for fechada
+        self.root.protocol("WM_DELETE_WINDOW", self.ao_fechar)
 
     def ao_fechar(self):
         """Salva o estado atual e fecha o programa"""
@@ -65,160 +60,121 @@ class InterfaceCitacoes:
         ]
 
     def criar_widgets(self):
-        # Frame principal
-        self.root.configure(bg='#f0f0f0')
-
-        # Inicializar variável para o combobox
-        self.genero_var = tk.StringVar()
-
-        # Configurar estilo para elementos da interface
-        style = ttk.Style()
-
-        # Estilo para as abas
-        style.configure('Custom.TNotebook.Tab',
-                        font=('Segoe UI', 9))  # Fonte para as abas
-
-        # Frame para organizar notebook e botão de histórico lado a lado
-        main_container = ttk.Frame(self.root)
+        # Usar CTkFrame em vez de ttk.Frame
+        main_container = ctk.CTkFrame(self.root)
         main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Frame para as abas
-        tabs_frame = ttk.Frame(main_container)
-        tabs_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Notebook customizado do CTk
+        self.notebook = ctk.CTkTabview(main_container)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Notebook para abas
-        self.notebook = ttk.Notebook(tabs_frame, style='Custom.TNotebook')
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=(10, 0), pady=5)
+        # Adicionar abas usando CTkTabview com texto baseado no idioma
+        self.main_frame = self.notebook.add("Quotes")
+        self.favorites_frame = self.notebook.add(
+            "Favoritos" if self.is_portuguese else "Favorites")
 
-        # Aba principal
-        self.main_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(self.main_frame, text="Quotes")
-
-        # Aba de favoritos
-        self.favorites_frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(self.favorites_frame, text="Favorites")
-
-        # Frame para o botão de histórico
-        history_frame = ttk.Frame(main_container)
-        history_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5)
-
-        # Botão de histórico
-        self.history_button = ttk.Button(history_frame,
-                                         text="≡",  # Símbolo de menu
-                                         width=2,
-                                         command=self.show_history,
-                                         style='Small.Icon.TButton')
-        # Ajustado o padding superior
-        self.history_button.pack(side=tk.TOP, pady=(7, 0))
-
-        # Configurar estilo do botão de histórico
-        style = ttk.Style()
-        style.configure('Small.Icon.TButton',
-                        font=('Segoe UI', 10),  # Fonte um pouco maior
-                        padding=1)
-
-        # Configurar abas
         self.configurar_aba_principal()
         self.configurar_aba_favoritos()
 
+        # Configura os textos iniciais baseados no idioma carregado
+        self.atualizar_textos_interface()
+
     def show_history(self):
         """Mostra o histórico em uma janela separada"""
-        # Criar janela de histórico
-        history_window = tk.Toplevel(self.root)
-        history_window.title("History")
-        history_window.geometry("800x400")
+        if self.history_window is not None:
+            self.history_window.lift()
+            return
 
-        # Centraliza a janela de histórico
-        history_window.withdraw()
-        history_window.update_idletasks()
+        self.history_window = ctk.CTkToplevel(self.root)
+        self.history_window.title(
+            "Histórico" if self.is_portuguese else "History")
+        self.history_window.geometry("800x400")
 
-        # Calcula posição
-        x = (history_window.winfo_screenwidth() -
-             history_window.winfo_width()) // 2
-        y = (history_window.winfo_screenheight() -
-             history_window.winfo_height()) // 2
-        history_window.geometry(f"+{x}+{y}")
-        history_window.deiconify()
+        # Criar estilo para o Treeview
+        style = ttk.Style()
+        if ctk.get_appearance_mode() == "Dark":
+            # Configuração para modo escuro
+            style.configure(
+                "Treeview",
+                background="#2b2b2b",
+                foreground="white",
+                fieldbackground="#2b2b2b",
+                bordercolor="#2b2b2b",
+                lightcolor="#2b2b2b",
+                darkcolor="#2b2b2b",
+                selectbackground="#1f538d",
+                selectforeground="white"
+            )
+            style.configure(
+                "Treeview.Heading",
+                background="#2b2b2b",
+                foreground="white",
+                bordercolor="#2b2b2b",
+                lightcolor="#2b2b2b",
+                darkcolor="#2b2b2b"
+            )
+            # Configurar cores de seleção
+            style.map(
+                "Treeview",
+                background=[("selected", "#1f538d")],
+                foreground=[("selected", "white")]
+            )
+            # Configurar cores da scrollbar
+            style.configure(
+                "Vertical.TScrollbar",
+                background="#2b2b2b",
+                bordercolor="#2b2b2b",
+                arrowcolor="white",
+                troughcolor="#2b2b2b"
+            )
+        else:
+            # Configuração para modo claro
+            style.configure(
+                "Treeview",
+                background="white",
+                foreground="black",
+                fieldbackground="white"
+            )
+            style.configure(
+                "Treeview.Heading",
+                background="white",
+                foreground="black"
+            )
+            style.map(
+                "Treeview",
+                background=[("selected", "#0078D7")],
+                foreground=[("selected", "white")]
+            )
+
+        def on_history_close():
+            self.history_window.destroy()
+            self.history_window = None
+
+        self.history_window.protocol("WM_DELETE_WINDOW", on_history_close)
 
         # Frame principal
-        main_history_frame = ttk.Frame(history_window)
+        main_history_frame = ctk.CTkFrame(self.history_window)
         main_history_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Frame para o botão de remover
-        button_frame = ttk.Frame(main_history_frame)
+        # Frame para botões
+        button_frame = ctk.CTkFrame(main_history_frame)
         button_frame.pack(fill=tk.X, pady=(0, 5))
 
-        # Botão para remover do histórico
-        ttk.Button(button_frame,
-                   text="Remove Selected",
-                   command=lambda: remover_historico_selecionado()).pack(side=tk.LEFT)
-
-        # Lista de citações do histórico com scrollbar
-        lista_historico = ttk.Treeview(main_history_frame,
-                                       columns=("timestamp", "quote",
-                                                "author", "category"),
-                                       show="headings",
-                                       selectmode="extended",  # Permite seleção múltipla
-                                       style='Custom.Treeview')
-
-        # Configurar estilo do Treeview
-        style = ttk.Style()
-        if self.tema_escuro:
-            style.configure('Custom.Treeview',
-                            background='#1b2838',
-                            foreground='white',
-                            fieldbackground='#1b2838',
-                            font=('Segoe UI', 10))
-            style.configure('Custom.Treeview.Heading',
-                            background='#2a475e',
-                            foreground='white',
-                            font=('Segoe UI', 10, 'bold'))
-        else:
-            style.configure('Custom.Treeview',
-                            background='white',
-                            foreground='black',
-                            fieldbackground='white',
-                            font=('Segoe UI', 10))
-            style.configure('Custom.Treeview.Heading',
-                            background='#f0f0f0',
-                            foreground='black',
-                            font=('Segoe UI', 10, 'bold'))
-
-        # Configurar colunas
-        lista_historico.heading("timestamp", text="Date/Time")
-        lista_historico.heading("quote", text="Quote")
-        lista_historico.heading("author", text="Author")
-        lista_historico.heading("category", text="Category")
-
-        # Ajustar largura das colunas
-        lista_historico.column("timestamp", width=150, minwidth=150)
-        lista_historico.column("quote", width=400, minwidth=300)
-        lista_historico.column("author", width=150, minwidth=150)
-        lista_historico.column("category", width=100, minwidth=100)
-
-        # Adicionar scrollbar
-        scrollbar = ttk.Scrollbar(
-            main_history_frame, orient=tk.VERTICAL, command=lista_historico.yview)
-        lista_historico.configure(yscrollcommand=scrollbar.set)
-
-        # Posicionar lista e scrollbar
-        lista_historico.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Função para remover itens selecionados do histórico
         def remover_historico_selecionado():
             selected_items = lista_historico.selection()
             if not selected_items:
                 return
 
             for item_id in selected_items:
-                item = lista_historico.item(item_id)
-                valores = item['values']
+                valores = lista_historico.item(item_id)['values']
 
                 # Remove do histórico
                 for citacao in self.gerenciador.historico[:]:
+                    # Verifica tanto texto_en quanto texto_pt
                     if (citacao['timestamp'] == valores[0] and
-                        citacao['texto'] == valores[1] and
+                        (citacao.get('texto_en') == valores[1] or
+                         citacao.get('texto_pt') == valores[1] or
+                         citacao.get('texto') == valores[1]) and
                             citacao['autor'] == valores[2]):
                         self.gerenciador.historico.remove(citacao)
 
@@ -228,246 +184,349 @@ class InterfaceCitacoes:
             # Salva o histórico atualizado
             self.gerenciador.salvar_historico()
 
+        # Botão de remover
+        self.remove_history_button = ctk.CTkButton(
+            button_frame,
+            text="Remover Selecionados" if self.is_portuguese else "Remove Selected",
+            command=remover_historico_selecionado
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Frame para a lista
+        list_frame = ctk.CTkFrame(main_history_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Lista de histórico com cabeçalhos traduzidos
+        colunas = {
+            "Time": "Data/Hora" if self.is_portuguese else "Time",
+            "Quote": "Citação" if self.is_portuguese else "Quote",
+            "Author": "Autor" if self.is_portuguese else "Author",
+            "Category": "Categoria" if self.is_portuguese else "Category"
+        }
+
+        lista_historico = ttk.Treeview(
+            list_frame,
+            columns=tuple(colunas.keys()),
+            show="headings"
+        )
+
+        # Configurar colunas com textos traduzidos
+        for col_id, header_text in colunas.items():
+            lista_historico.heading(col_id, text=header_text)
+
+        # Configurar larguras das colunas
+        lista_historico.column("Time", width=150)
+        lista_historico.column("Quote", width=400)
+        lista_historico.column("Author", width=150)
+        lista_historico.column("Category", width=100)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(
+            list_frame,
+            orient=tk.VERTICAL,
+            command=lista_historico.yview
+        )
+        lista_historico.configure(yscrollcommand=scrollbar.set)
+
+        # Posicionar lista e scrollbar
+        lista_historico.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
         # Preencher o histórico
         for citacao in self.gerenciador.historico:
+            # Usa a versão apropriada do texto baseado no idioma
+            if 'texto_en' in citacao and 'texto_pt' in citacao:
+                texto_citacao = citacao['texto_pt'] if self.is_portuguese else citacao['texto_en']
+            else:
+                # Fallback para citações antigas
+                texto_citacao = citacao['texto']
+                if self.is_portuguese and not any(c in texto_citacao for c in 'áéíóúâêîôûãõàèìòùç'):
+                    texto_citacao = self.translate_quotes(texto_citacao)
+
             lista_historico.insert("", tk.END, values=(
                 citacao.get('timestamp', ''),
-                citacao.get('texto', ''),
+                texto_citacao,
                 citacao.get('autor', ''),
                 citacao.get('genero', '')
             ))
 
-        # Configurar seleção de linha
-        def on_select(event):
-            selected = lista_historico.selection()
-            if selected:
-                item = lista_historico.item(selected[0])
-                # Você pode fazer algo com o item selecionado
-                print(item['values'])
+        # Centralizar a janela
+        self.centralizar_janela(self.history_window)
 
-        lista_historico.bind('<<TreeviewSelect>>', on_select)
+        # Aplicar estilo do Treeview
+        self.aplicar_estilo_treeview()
 
     def definir_cores(self):
-        """Define as cores do tema atual"""
+        """Define as cores baseadas no tema atual"""
         if self.tema_escuro:
-            # Cores para o tema escuro (Steam style)
             self.cores = {
-                'bg': '#171a21',  # Fundo principal Steam
-                'fg': '#ffffff',
-                'text_bg': '#1b2838',  # Área de texto Steam
-                'text_fg': '#ffffff',
-                'button_bg': '#2a475e',  # Botões Steam
-                'button_fg': '#ffffff',
-                'treeview_bg': '#1b2838',
-                'treeview_fg': '#ffffff',
-                'treeview_selected_bg': '#66c0f4',  # Azul claro Steam
-                'tab_selected': '#66c0f4',  # Azul claro Steam
-                'tab_bg': '#2a475e',  # Azul escuro Steam
-                'tab_fg': '#ffffff'
+                'bg_principal': '#2c3e50',
+                'bg_citacao': '#34495e',
+                'texto': '#ecf0f1',
+                'destaque': '#3498db',
+                'botao': '#2980b9'
             }
         else:
-            # Cores para o tema claro
             self.cores = {
-                'bg': '#f3f3f3',
-                'fg': '#000000',
-                'text_bg': '#ffffff',
-                'text_fg': '#000000',
-                'button_bg': '#ffffff',
-                'button_fg': '#000000',
-                'treeview_bg': '#ffffff',
-                'treeview_fg': '#000000',
-                'treeview_selected_bg': '#66c0f4',  # Mantém o azul Steam
-                'tab_selected': '#66c0f4',  # Mantém o azul Steam
-                'tab_bg': '#f0f0f0',
-                'tab_fg': '#000000'
+                'bg_principal': '#f0f0f0',
+                'bg_citacao': '#ffffff',
+                'texto': '#2c3e50',
+                'destaque': '#3498db',
+                'botao': '#2980b9'
             }
 
         self.aplicar_cores()
 
     def aplicar_cores(self):
-        """Aplica as cores do tema atual aos widgets"""
-        style = ttk.Style()
-
-        # Configuração do tema principal
-        self.root.configure(bg=self.cores['bg'])
-
-        # Configuração dos frames
-        style.configure('TFrame', background=self.cores['bg'])
-
-        # Configuração dos botões
-        style.configure('TButton',
-                        background=self.cores['button_bg'],
-                        foreground=self.cores['button_fg'])
-
-        # Configuração do Notebook (abas)
-        style.configure('TNotebook', background=self.cores['bg'])
-        style.configure('TNotebook.Tab',
-                        background=self.cores['tab_bg'],
-                        foreground=self.cores['tab_fg'],
-                        padding=[10, 2])
-
-        # Configuração da aba selecionada
-        style.map('TNotebook.Tab',
-                  background=[('selected', self.cores['tab_selected'])],
-                  foreground=[('selected', '#ffffff')])
-
-        # Configuração das áreas de texto
-        self.texto_citacao.configure(
-            bg=self.cores['text_bg'],
-            fg=self.cores['text_fg'],
-            insertbackground=self.cores['text_fg']
-        )
-
-        # Configuração do Treeview
-        style.configure('Treeview',
-                        background=self.cores['treeview_bg'],
-                        foreground=self.cores['treeview_fg'],
-                        fieldbackground=self.cores['treeview_bg'])
-
-        style.map('Treeview',
-                  background=[
-                      ('selected', self.cores['treeview_selected_bg'])],
-                  foreground=[('selected', '#ffffff')])
+        """Aplica as cores aos elementos da interface"""
+        # No customtkinter, as cores são gerenciadas automaticamente
+        # baseadas no appearance_mode
+        pass
 
     def toggle_theme(self):
         """Alterna entre tema claro e escuro"""
+        # Inverte o tema atual
+        novo_tema = "light" if self.tema_escuro else "dark"
+        ctk.set_appearance_mode(novo_tema)
         self.tema_escuro = not self.tema_escuro
+
+        # Atualiza o ícone do botão (sol para tema escuro, lua para tema claro)
+        self.theme_button.configure(text="☀️" if self.tema_escuro else "🌙")
+
+        # Atualiza as cores e estilos
         self.definir_cores()
+        self.aplicar_estilo_treeview()
+
+        # Se a janela de histórico estiver aberta, atualiza seu estilo
+        if self.history_window is not None:
+            self.history_window.destroy()
+            self.history_window = None
+            self.show_history()
+
+        # Força atualização da interface
+        self.root.update()
+
+    def toggle_language(self):
+        """Alterna entre inglês e português"""
+        self.is_portuguese = not self.is_portuguese
+
+        # Atualiza o texto do botão para mostrar o idioma para o qual vai mudar
+        self.language_button.configure(
+            text="English" if self.is_portuguese else "Português"
+        )
+
+        # Atualiza o título da janela
+        self.root.title(
+            "Citações Diárias" if self.is_portuguese else "Daily Quotes")
+
+        # Atualiza os textos dos botões
+        self.daily_quote_button.configure(
+            text="Citação Diária" if self.is_portuguese else "Daily Quote"
+        )
+        self.new_quote_button.configure(
+            text="Nova Citação" if self.is_portuguese else "New Quote"
+        )
+
+        # Atualiza o botão de favoritos
+        if self.citacao_atual:
+            is_favorito = self.gerenciador.is_favorito(self.citacao_atual)
+            if self.is_portuguese:
+                texto_botao = "Remover dos Favoritos" if is_favorito else "Adicionar aos Favoritos"
+            else:
+                texto_botao = "Remove from Favorites" if is_favorito else "Add to Favorites"
+            self.favorite_button.configure(text=texto_botao)
+        else:
+            # Se não houver citação atual, mostra o texto padrão
+            self.favorite_button.configure(
+                text="Adicionar aos Favoritos" if self.is_portuguese else "Add to Favorites"
+            )
+
+        # Atualiza a citação atual se existir
+        if self.citacao_atual:
+            self.mostrar_citacao(self.citacao_atual)
+
+        # Atualiza a lista de favoritos
+        self.atualizar_favoritos()
+
+        # Atualiza o texto do botão de histórico
+        self.history_button.configure(
+            text="Histórico" if self.is_portuguese else "History"
+        )
+
+        # Atualiza a janela de histórico se estiver aberta
+        if self.history_window is not None:
+            self.history_window.destroy()
+            self.history_window = None
+            self.show_history()  # Reabre a janela com o novo idioma
+
+        # Atualiza os cabeçalhos da lista de favoritos
+        colunas = {
+            "Time": "Data/Hora" if self.is_portuguese else "Time",
+            "Quote": "Citação" if self.is_portuguese else "Quote",
+            "Author": "Autor" if self.is_portuguese else "Author",
+            "Category": "Categoria" if self.is_portuguese else "Category"
+        }
+
+        for col_id, header_text in colunas.items():
+            self.lista_favoritos.heading(col_id, text=header_text)
+
+        # Atualiza a lista de favoritos para mostrar os textos no idioma correto
+        self.atualizar_favoritos()
+
+    def on_category_change(self, choice):
+        """Chamado quando uma nova categoria é selecionada"""
+        self.genero_var.set(choice)
+        self.mostrar_citacao_dia()
 
     def configurar_aba_principal(self):
-        # Frame superior para o dropdown e botões
-        top_frame = ttk.Frame(self.main_frame)
+        """Configura a aba principal com os widgets modernos"""
+        # Frame superior com a mesma cor de fundo
+        top_frame = ctk.CTkFrame(
+            self.main_frame,
+            fg_color="transparent"  # Isso fará o frame usar a cor de fundo do pai
+        )
         top_frame.pack(fill=tk.X, pady=5)
 
-        # Label e Dropdown à esquerda
-        label_frame = ttk.Frame(top_frame)
-        label_frame.pack(side=tk.LEFT)
+        # Frame para categoria também transparente
+        category_frame = ctk.CTkFrame(
+            top_frame,
+            fg_color="transparent"  # Isso fará o frame usar a cor de fundo do pai
+        )
+        category_frame.pack(side=tk.LEFT, padx=10)
 
-        # Label com fonte Segoe UI
-        ttk.Label(label_frame,
-                  text="Choose quote category:",
-                  style='TLabel').pack(side=tk.LEFT, padx=(0, 5))
+        ctk.CTkLabel(
+            category_frame,
+            text="Choose quote category:",
+            font=("Segoe UI", 12)
+        ).pack(side=tk.LEFT, padx=5)
 
-        # Combobox com fonte Segoe UI
-        self.combo_generos = ttk.Combobox(label_frame,
-                                          textvariable=self.genero_var,
-                                          values=self.generos,
-                                          width=15,
-                                          font=('Segoe UI', 9),
-                                          state="readonly")
-        self.combo_generos.pack(side=tk.LEFT)
+        self.combo_generos = ctk.CTkOptionMenu(
+            category_frame,
+            values=self.generos,
+            command=self.on_category_change,
+            width=150,
+            font=("Segoe UI", 12)
+        )
+        self.combo_generos.pack(side=tk.LEFT, padx=5)
+        self.combo_generos.set(self.ultima_categoria)
+        self.genero_var.set(self.ultima_categoria)
 
         # Frame para botões à direita
-        right_buttons_frame = ttk.Frame(top_frame)
-        right_buttons_frame.pack(side=tk.RIGHT)
+        buttons_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
+        buttons_frame.pack(side=tk.RIGHT, padx=10)
 
-        # Configurar estilo comum para os botões
-        style = ttk.Style()
-        style.configure('Small.Icon.TButton',
-                        font=('Segoe UI', 10),
-                        padding=1)
+        # Botão de histórico
+        self.history_button = ctk.CTkButton(
+            buttons_frame,
+            text="Histórico" if self.is_portuguese else "History",
+            command=self.show_history
+        )
+        self.history_button.pack(side=tk.LEFT, padx=5)
 
-        # Botão de histórico à direita
-        self.history_button = ttk.Button(right_buttons_frame,
-                                         text="≡",
-                                         width=3,
-                                         command=self.show_history,
-                                         style='Small.Icon.TButton')
-        self.history_button.pack(side=tk.RIGHT, padx=5)
+        # Botão de tema
+        self.theme_button = ctk.CTkButton(
+            buttons_frame,
+            text="☀️" if self.tema_escuro else "🌙",
+            width=40,
+            command=self.toggle_theme
+        )
+        self.theme_button.pack(side=tk.RIGHT, padx=2)
 
-        # Botão de tema à direita (usando o mesmo estilo)
-        self.theme_button = ttk.Button(right_buttons_frame,
-                                       text="🌓",
-                                       width=3,
-                                       command=self.toggle_theme,
-                                       style='Small.Icon.TButton')  # Usando o mesmo estilo
-        self.theme_button.pack(side=tk.RIGHT)
+        # Botão de idioma - mostra o idioma para o qual vai mudar
+        self.language_button = ctk.CTkButton(
+            buttons_frame,
+            # Se está em português, mostra "English", se está em inglês, mostra "Português"
+            text="English" if self.is_portuguese else "Português",
+            width=80,
+            command=self.toggle_language
+        )
+        self.language_button.pack(side=tk.RIGHT, padx=2)
 
-        # Seleciona o primeiro gênero por padrão
-        if self.generos:
-            self.combo_generos.set(self.generos[0])
+        # Frame para botões de ação
+        action_frame = ctk.CTkFrame(self.main_frame)
+        action_frame.pack(pady=10)
 
-        # Botões
-        buttons_frame = ttk.Frame(self.main_frame)
-        buttons_frame.pack(pady=10)
+        # Botões de ação
+        self.daily_quote_button = ctk.CTkButton(
+            action_frame,
+            text="Daily Quote",
+            command=self.mostrar_citacao_dia
+        )
+        self.daily_quote_button.pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(buttons_frame,
-                   text="Daily Quote",
-                   command=self.mostrar_citacao_dia).pack(side=tk.LEFT, padx=5)
+        self.new_quote_button = ctk.CTkButton(
+            action_frame,
+            text="New Quote",
+            command=self.nova_citacao_aleatoria
+        )
+        self.new_quote_button.pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(buttons_frame,
-                   text="New Quote",
-                   command=self.nova_citacao_aleatoria).pack(side=tk.LEFT, padx=5)
-
-        # Botão de favorito
-        self.favorite_button = ttk.Button(buttons_frame,
-                                          text="Add to Favorites",
-                                          command=self.adicionar_favorito_atual)
+        self.favorite_button = ctk.CTkButton(
+            action_frame,
+            text="Add to Favorites",
+            command=self.adicionar_favorito_atual
+        )
         self.favorite_button.pack(side=tk.LEFT, padx=5)
 
-        # Área de exibição da citação (somente leitura)
-        self.texto_citacao = tk.Text(self.main_frame,
-                                     height=10,
-                                     width=50,
-                                     wrap=tk.WORD,
-                                     font=self.citacao_font,
-                                     state='disabled')
+        # Área de texto
+        self.texto_citacao = ctk.CTkTextbox(
+            self.main_frame,
+            height=200,
+            font=("Palatino", 14),
+            wrap="word"
+        )
         self.texto_citacao.pack(pady=10, fill=tk.BOTH, expand=True)
 
-        # Variável para armazenar a citação atual
-        self.citacao_atual = None
-
-        # Seleciona a última categoria usada
-        self.combo_generos.set(self.ultima_categoria)
-
-        # Se houver uma última citação, mostra ela
-        if self.ultima_citacao:
-            self.mostrar_citacao(self.ultima_citacao)
-
     def configurar_aba_favoritos(self):
-        # Frame principal para organizar os elementos
-        main_favorites_frame = ttk.Frame(self.favorites_frame)
-        main_favorites_frame.pack(fill=tk.BOTH, expand=True)
+        """Configura a aba de favoritos"""
+        # Frame principal
+        favorites_main_frame = ctk.CTkFrame(self.favorites_frame)
+        favorites_main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Frame para o botão no topo
-        buttons_frame = ttk.Frame(main_favorites_frame)
-        buttons_frame.pack(pady=5, fill=tk.X)
+        # Frame para a lista
+        list_frame = ctk.CTkFrame(favorites_main_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Botão para remover dos favoritos
-        ttk.Button(buttons_frame,
-                   text="Remove Selected Favorites",
-                   command=self.remover_favoritos_selecionados).pack(pady=5)
+        # Cabeçalhos traduzidos
+        colunas = {
+            "Time": "Data/Hora" if self.is_portuguese else "Time",
+            "Quote": "Citação" if self.is_portuguese else "Quote",
+            "Author": "Autor" if self.is_portuguese else "Author",
+            "Category": "Categoria" if self.is_portuguese else "Category"
+        }
 
-        # Lista de citações favoritas com seleção múltipla
-        self.lista_favoritos = ttk.Treeview(main_favorites_frame,
-                                            columns=("timestamp", "quote",
-                                                     "author", "category"),
-                                            show="headings",
-                                            selectmode="extended")  # Permite seleção múltipla
+        # Lista de favoritos
+        self.lista_favoritos = ttk.Treeview(
+            list_frame,
+            columns=tuple(colunas.keys()),
+            show="headings"
+        )
 
-        # Configurar colunas
-        self.lista_favoritos.heading("timestamp", text="Date/Time")
-        self.lista_favoritos.heading("quote", text="Quote")
-        self.lista_favoritos.heading("author", text="Author")
-        self.lista_favoritos.heading("category", text="Category")
+        # Configurar colunas com textos traduzidos
+        for col_id, header_text in colunas.items():
+            self.lista_favoritos.heading(col_id, text=header_text)
 
-        # Ajustar largura das colunas
-        self.lista_favoritos.column("timestamp", width=130, minwidth=130)
-        self.lista_favoritos.column("quote", width=300, minwidth=200)
-        self.lista_favoritos.column("author", width=100, minwidth=100)
-        self.lista_favoritos.column("category", width=70, minwidth=70)
+        # Configurar larguras das colunas
+        self.lista_favoritos.column("Time", width=150)
+        self.lista_favoritos.column("Quote", width=400)
+        self.lista_favoritos.column("Author", width=150)
+        self.lista_favoritos.column("Category", width=100)
 
-        # Adicionar scrollbar
+        # Scrollbar
         scrollbar = ttk.Scrollbar(
-            main_favorites_frame, orient=tk.VERTICAL, command=self.lista_favoritos.yview)
+            list_frame,
+            orient=tk.VERTICAL,
+            command=self.lista_favoritos.yview
+        )
         self.lista_favoritos.configure(yscrollcommand=scrollbar.set)
 
         # Posicionar lista e scrollbar
-        self.lista_favoritos.pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        self.lista_favoritos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Carrega os favoritos iniciais
+        # Aplicar estilo do Treeview
+        self.aplicar_estilo_treeview()
+
+        # Preencher a lista de favoritos
         self.atualizar_favoritos()
 
     def remover_favoritos_selecionados(self):
@@ -483,23 +542,24 @@ class InterfaceCitacoes:
             item = self.lista_favoritos.item(item_id)
             valores = item['values']
 
-            citacao = {
-                'timestamp': valores[0],
-                'texto': valores[1],
-                'autor': valores[2],
-                'genero': valores[3]
-            }
+            # Remove dos favoritos
+            for fav in self.gerenciador.favoritos[:]:
+                # Verifica tanto texto_en quanto texto_pt
+                if (fav['timestamp'] == valores[0] and
+                    (fav.get('texto_en') == valores[1] or
+                     fav.get('texto_pt') == valores[1] or
+                     fav.get('texto') == valores[1]) and
+                        fav['autor'] == valores[2]):
+                    self.gerenciador.favoritos.remove(fav)
 
-            # Remover dos favoritos
-            self.gerenciador.remover_favorito(citacao)
+                    # Se a citação atual é a mesma que foi removida, atualizar o botão
+                    if self.citacao_atual and (
+                            self.citacao_atual.get('texto_en') == fav.get('texto_en') or
+                            self.citacao_atual.get('texto_pt') == fav.get('texto_pt')):
+                        self.favorite_button.configure(text="Add to Favorites")
 
-            # Se a citação atual é a mesma que foi removida, atualizar o botão
-            if (self.citacao_atual and
-                self.citacao_atual['texto'] == citacao['texto'] and
-                    self.citacao_atual['autor'] == citacao['autor']):
-                self.favorite_button.config(text="Add to Favorites")
-
-        # Atualizar a visualização
+        # Salva e atualiza a visualização
+        self.gerenciador.salvar_favoritos()
         self.atualizar_favoritos()
 
     def atualizar_favoritos(self):
@@ -510,9 +570,18 @@ class InterfaceCitacoes:
         # Adicionar citações favoritas
         if self.gerenciador.favoritos:
             for citacao in self.gerenciador.favoritos:
+                # Usa a versão apropriada do texto baseado no idioma
+                if 'texto_en' in citacao and 'texto_pt' in citacao:
+                    texto_citacao = citacao['texto_pt'] if self.is_portuguese else citacao['texto_en']
+                else:
+                    # Fallback para citações antigas
+                    texto_citacao = citacao['texto']
+                    if self.is_portuguese and not any(c in texto_citacao for c in 'áéíóúâêîôûãõàèìòùç'):
+                        texto_citacao = self.translate_quotes(texto_citacao)
+
                 self.lista_favoritos.insert("", tk.END, values=(
                     citacao['timestamp'],
-                    citacao['texto'],
+                    texto_citacao,
                     citacao['autor'],
                     citacao['genero']
                 ))
@@ -522,83 +591,85 @@ class InterfaceCitacoes:
         if self.citacao_atual:
             if self.gerenciador.is_favorito(self.citacao_atual):
                 self.gerenciador.remover_favorito(self.citacao_atual)
-                self.favorite_button.config(text="Add to Favorites")
+                self.favorite_button.configure(text="Add to Favorites")
             else:
-                self.gerenciador.adicionar_favorito(self.citacao_atual)
-                self.favorite_button.config(text="Remove from Favorites")
+                # Cria uma cópia da citação atual com ambos os idiomas
+                citacao_para_salvar = self.citacao_atual.copy()
+                # Versão em inglês
+                citacao_para_salvar['texto_en'] = citacao_para_salvar['texto']
+                citacao_para_salvar['texto_pt'] = self.translate_quotes(
+                    citacao_para_salvar['texto'])  # Versão em português
+
+                # Adiciona aos favoritos
+                self.gerenciador.adicionar_favorito(citacao_para_salvar)
+                self.favorite_button.configure(text="Remove from Favorites")
+
             self.atualizar_favoritos()
-    
-    def translate_quotes(self, original_text):        
+
+    def translate_quotes(self, original_text):
         url = "https://text-translator2.p.rapidapi.com/translate"
 
         payload = {
-	    "source_language": "en",
-	    "target_language": "pt",
-	    "text": f'{original_text}'
+            "source_language": "en",
+            "target_language": "pt",
+            "text": f'{original_text}'
         }
         headers = {
-	    "x-rapidapi-key": "3b98b3197fmsh04ee2115419aaabp1e44d8jsnefa6a1c0f6de",
-	    "x-rapidapi-host": "text-translator2.p.rapidapi.com",
-	    "Content-Type": "application/x-www-form-urlencoded"
+            "x-rapidapi-key": "3b98b3197fmsh04ee2115419aaabp1e44d8jsnefa6a1c0f6de",
+            "x-rapidapi-host": "text-translator2.p.rapidapi.com",
+            "Content-Type": "application/x-www-form-urlencoded"
         }
 
         response = requests.post(url, data=payload, headers=headers)
         responseData = response.json()
         translatedText = responseData.get('data', {}).get('translatedText')
-        
+
         return translatedText
 
     def mostrar_citacao(self, citacao):
         """Mostra a citação com formatação melhorada"""
-        self.texto_citacao.config(state='normal')
-        self.texto_citacao.delete(1.0, tk.END)
+        self.texto_citacao.configure(state="normal")
+        self.texto_citacao.delete("1.0", tk.END)
+
         if citacao:
-            self.citacao_atual = citacao
-            # Insere citação com fonte estilizada
-            self.texto_citacao.tag_configure('citacao', font=self.citacao_font)
-            self.texto_citacao.tag_configure('autor', font=self.autor_font)
-
-            self.texto_citacao.insert(
-                tk.END, f'"{self.translate_quotes(citacao["texto"])}"\n\n', 'citacao')
-            self.texto_citacao.insert(tk.END, f'- {citacao["autor"]}', 'autor')
-
-            # Atualiza o texto do botão de favorito
-            if self.gerenciador.is_favorito(citacao):
-                self.favorite_button.config(text="Remove from Favorites")
+            if 'texto_en' in citacao and 'texto_pt' in citacao:
+                texto_citacao = citacao['texto_pt'] if self.is_portuguese else citacao['texto_en']
             else:
-                self.favorite_button.config(text="Add to Favorites")
+                texto_citacao = self.translate_quotes(
+                    citacao["texto"]) if self.is_portuguese else citacao["texto"]
+                citacao['texto_en'] = citacao["texto"]
+                citacao['texto_pt'] = self.translate_quotes(citacao["texto"])
 
-            # Verifica se a citação já existe no histórico
-            citacao_existe = False
-            for hist_citacao in self.gerenciador.historico:
-                if (hist_citacao['texto'] == citacao['texto'] and
-                        hist_citacao['autor'] == citacao['autor']):
-                    citacao_existe = True
-                    break
+            self.citacao_atual = citacao
+            self.texto_citacao.insert(
+                "1.0", f'"{texto_citacao}"\n\n- {citacao["autor"]}')
 
-            # Só adiciona ao histórico se for uma citação nova
-            if not citacao_existe:
-                citacao_com_timestamp = citacao.copy()
-                citacao_com_timestamp['timestamp'] = datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S")
-                self.gerenciador.historico.insert(0, citacao_com_timestamp)
-                self.gerenciador.historico = self.gerenciador.historico[:50]
-                self.gerenciador.salvar_historico()
+            # Adiciona a citação ao histórico
+            self.gerenciador.adicionar_ao_historico(citacao)
+
+            # Atualiza o texto do botão de favoritos baseado no idioma
+            is_favorito = self.gerenciador.is_favorito(citacao)
+            if self.is_portuguese:
+                texto_botao = "Remover dos Favoritos" if is_favorito else "Adicionar aos Favoritos"
+            else:
+                texto_botao = "Remove from Favorites" if is_favorito else "Add to Favorites"
+            self.favorite_button.configure(text=texto_botao)
         else:
             self.citacao_atual = None
             self.texto_citacao.insert(
-                tk.END, "Could not get a quote. Please try again.")
-        self.texto_citacao.config(state='disabled')
+                "1.0", "Não foi possível obter uma citação. Tente novamente." if self.is_portuguese
+                else "Could not get a quote. Please try again.")
+
+        self.texto_citacao.configure(state="disabled")
 
     def mostrar_citacao_dia(self):
         """Mostra a citação do dia para o gênero selecionado"""
         genero = self.genero_var.get()
-        if not genero:
-            # Temporariamente habilita para mostrar mensagem
-            self.texto_citacao.config(state='normal')
-            self.texto_citacao.delete(1.0, tk.END)
-            self.texto_citacao.insert(tk.END, "Please select a category first")
-            self.texto_citacao.config(state='disabled')
+        if not genero or genero.strip() == "":  # Melhora a verificação
+            self.texto_citacao.configure(state='normal')
+            self.texto_citacao.delete("1.0", tk.END)
+            self.texto_citacao.insert("1.0", "Please select a category first")
+            self.texto_citacao.configure(state='disabled')
             return
 
         # Obtém a citação diária (seja nova ou existente)
@@ -609,15 +680,40 @@ class InterfaceCitacoes:
         """Obtém uma nova citação aleatória para o gênero selecionado"""
         genero = self.genero_var.get()
         if not genero:
-            # Temporariamente habilita para mostrar mensagem
-            self.texto_citacao.config(state='normal')
+            self.texto_citacao.configure(state='normal')
             self.texto_citacao.delete(1.0, tk.END)
             self.texto_citacao.insert(tk.END, "Please select a category first")
-            self.texto_citacao.config(state='disabled')
+            self.texto_citacao.configure(state='disabled')
             return
 
-        citacao = self.gerenciador.obter_citacao_por_genero(genero)
+        # Desabilita o botão imediatamente
+        self.new_quote_button.configure(state="disabled", text="Loading...")
+        self.root.update()  # Força atualização da interface
+
+        # Atualiza a interface para mostrar que está carregando
+        self.texto_citacao.configure(state='normal')
+        self.texto_citacao.delete(1.0, tk.END)
+        self.texto_citacao.insert(tk.END, "Loading new quote...")
+        self.texto_citacao.configure(state='disabled')
+
+        try:
+            # Obtém a nova citação
+            citacao = self.gerenciador.obter_citacao_por_genero(genero)
+
+            # Adiciona um pequeno delay para evitar cliques acidentais
+            self.root.after(1000, lambda: self.finalizar_nova_citacao(citacao))
+        except Exception as e:
+            # Em caso de erro, mostra a mensagem e reabilita o botão
+            self.texto_citacao.configure(state='normal')
+            self.texto_citacao.delete(1.0, tk.END)
+            self.texto_citacao.insert(tk.END, f"Error: {str(e)}")
+            self.texto_citacao.configure(state='disabled')
+            self.new_quote_button.configure(state="normal", text="New Quote")
+
+    def finalizar_nova_citacao(self, citacao):
+        """Finaliza o processo de obtenção de nova citação"""
         self.mostrar_citacao(citacao)
+        self.new_quote_button.configure(state="normal", text="New Quote")
 
     def iniciar(self):
         # Inicia a interface
@@ -651,25 +747,156 @@ class InterfaceCitacoes:
         janela.geometry(f"+{pos_x}+{pos_y}")
 
     def carregar_ultimo_estado(self):
-        """Carrega a última categoria, citação e tema selecionados"""
+        """Carrega a última categoria, citação, tema e idioma selecionados"""
         try:
-            with open('ultimo_estado.json', 'r') as f:
+            with open('ultimo_estado.json', 'r', encoding='utf-8') as f:
                 estado = json.load(f)
                 self.ultima_categoria = estado.get('categoria', 'Life')
                 self.ultima_citacao = estado.get('citacao', None)
-                # Carrega o tema salvo (False = claro, True = escuro)
-                self.tema_escuro = estado.get('tema_escuro', False)
-        except FileNotFoundError:
+                self.is_portuguese = estado.get('is_portuguese', True)
+                self.tema_escuro = estado.get('tema_escuro', True)
+
+                # Aplica o tema
+                ctk.set_appearance_mode(
+                    "dark" if self.tema_escuro else "light")
+
+        except (FileNotFoundError, json.JSONDecodeError):
             self.ultima_categoria = 'Life'
             self.ultima_citacao = None
-            self.tema_escuro = False
+            self.is_portuguese = True
+            self.tema_escuro = True
+            ctk.set_appearance_mode("dark")
 
     def salvar_ultimo_estado(self):
-        """Salva a categoria, citação e tema atual"""
+        """Salva o estado atual da interface"""
         estado = {
             'categoria': self.genero_var.get(),
             'citacao': self.citacao_atual,
-            'tema_escuro': self.tema_escuro  # Salva o estado do tema
+            'is_portuguese': self.is_portuguese,
+            'tema_escuro': self.tema_escuro  # Salva o estado do tema usando nossa variável
         }
-        with open('ultimo_estado.json', 'w') as f:
-            json.dump(estado, f)
+
+        try:
+            with open('ultimo_estado.json', 'w', encoding='utf-8') as f:
+                json.dump(estado, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Erro ao salvar estado: {str(e)}")
+
+    def aplicar_estilo_treeview(self):
+        """Aplica o estilo do Treeview baseado no tema atual"""
+        style = ttk.Style()
+
+        if ctk.get_appearance_mode() == "Dark":
+            # Configuração para modo escuro
+            # Usa o tema 'clam' que permite mais personalização
+            style.theme_use('clam')
+
+            # Cores para o modo escuro
+            dark_colors = {
+                'background': '#2b2b2b',
+                'foreground': 'white',
+                'selected_bg': '#1f538d',
+                'selected_fg': 'white',
+                'inactive_bg': '#404040',
+                'border': '#2b2b2b'
+            }
+
+            # Configuração principal do Treeview
+            style.configure(
+                "Treeview",
+                background=dark_colors['background'],
+                foreground=dark_colors['foreground'],
+                fieldbackground=dark_colors['background'],
+                borderwidth=0,
+                lightcolor=dark_colors['border'],
+                darkcolor=dark_colors['border']
+            )
+
+            # Configuração dos cabeçalhos
+            style.configure(
+                "Treeview.Heading",
+                background=dark_colors['inactive_bg'],
+                foreground=dark_colors['foreground'],
+                borderwidth=1,
+                relief="flat"
+            )
+
+            # Configuração da seleção
+            style.map(
+                "Treeview",
+                background=[
+                    ("selected", dark_colors['selected_bg']),
+                    ("!selected", dark_colors['background'])
+                ],
+                foreground=[
+                    ("selected", dark_colors['selected_fg']),
+                    ("!selected", dark_colors['foreground'])
+                ]
+            )
+
+            # Configuração da scrollbar
+            style.configure(
+                "Vertical.TScrollbar",
+                background=dark_colors['background'],
+                bordercolor=dark_colors['border'],
+                arrowcolor=dark_colors['foreground'],
+                troughcolor=dark_colors['background']
+            )
+
+            # Configuração do mapa da scrollbar
+            style.map(
+                "Vertical.TScrollbar",
+                background=[("pressed", dark_colors['inactive_bg']),
+                            ("active", dark_colors['inactive_bg'])],
+                arrowcolor=[("pressed", dark_colors['foreground']),
+                            ("active", dark_colors['foreground'])]
+            )
+
+        else:
+            # Configuração para modo claro
+            style.theme_use('default')
+            style.configure(
+                "Treeview",
+                background="white",
+                foreground="black",
+                fieldbackground="white"
+            )
+            style.configure(
+                "Treeview.Heading",
+                background="white",
+                foreground="black"
+            )
+            style.map(
+                "Treeview",
+                background=[("selected", "#0078D7")],
+                foreground=[("selected", "white")]
+            )
+
+    def atualizar_textos_interface(self):
+        """Atualiza todos os textos da interface baseado no idioma atual"""
+        # Título da janela
+        self.root.title(
+            "Citações Diárias" if self.is_portuguese else "Daily Quotes")
+
+        # Botões principais
+        if hasattr(self, 'daily_quote_button'):
+            self.daily_quote_button.configure(
+                text="Citação Diária" if self.is_portuguese else "Daily Quote"
+            )
+        if hasattr(self, 'new_quote_button'):
+            self.new_quote_button.configure(
+                text="Nova Citação" if self.is_portuguese else "New Quote"
+            )
+        if hasattr(self, 'history_button'):
+            self.history_button.configure(
+                text="Histórico" if self.is_portuguese else "History"
+            )
+        if hasattr(self, 'favorite_button'):
+            if self.citacao_atual:
+                is_favorito = self.gerenciador.is_favorito(self.citacao_atual)
+                texto_botao = "Remover dos Favoritos" if is_favorito else "Adicionar aos Favoritos" \
+                    if self.is_portuguese else \
+                    "Remove from Favorites" if is_favorito else "Add to Favorites"
+            else:
+                texto_botao = "Adicionar aos Favoritos" if self.is_portuguese else "Add to Favorites"
+            self.favorite_button.configure(text=texto_botao)
