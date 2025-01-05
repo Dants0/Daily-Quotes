@@ -69,9 +69,12 @@ class InterfaceCitacoes:
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         # Adicionar abas usando CTkTabview com texto baseado no idioma
-        self.main_frame = self.notebook.add("Quotes")
+        self.main_frame = self.notebook.add(
+            "Citações" if self.is_portuguese else "Quotes"
+        )
         self.favorites_frame = self.notebook.add(
-            "Favoritos" if self.is_portuguese else "Favorites")
+            "Favoritos" if self.is_portuguese else "Favorites"
+        )
 
         self.configurar_aba_principal()
         self.configurar_aba_favoritos()
@@ -309,71 +312,51 @@ class InterfaceCitacoes:
         """Alterna entre inglês e português"""
         self.is_portuguese = not self.is_portuguese
 
-        # Atualiza o texto do botão para mostrar o idioma para o qual vai mudar
-        self.language_button.configure(
-            text="English" if self.is_portuguese else "Português"
-        )
-
-        # Atualiza o título da janela
-        self.root.title(
-            "Citações Diárias" if self.is_portuguese else "Daily Quotes")
-
-        # Atualiza os textos dos botões
-        self.daily_quote_button.configure(
-            text="Citação Diária" if self.is_portuguese else "Daily Quote"
-        )
-        self.new_quote_button.configure(
-            text="Nova Citação" if self.is_portuguese else "New Quote"
-        )
-
-        # Atualiza o botão de favoritos
-        if self.citacao_atual:
-            is_favorito = self.gerenciador.is_favorito(self.citacao_atual)
-            if self.is_portuguese:
-                texto_botao = "Remover dos Favoritos" if is_favorito else "Adicionar aos Favoritos"
-            else:
-                texto_botao = "Remove from Favorites" if is_favorito else "Add to Favorites"
-            self.favorite_button.configure(text=texto_botao)
-        else:
-            # Se não houver citação atual, mostra o texto padrão
-            self.favorite_button.configure(
-                text="Adicionar aos Favoritos" if self.is_portuguese else "Add to Favorites"
+        # Salva o conteúdo atual antes de reconfigurar as abas
+        citacao_atual = self.citacao_atual
+        texto_atual = None
+        if citacao_atual:
+            texto_atual = (
+                citacao_atual['texto_pt'] if self.is_portuguese and 'texto_pt' in citacao_atual
+                else citacao_atual['texto_en'] if not self.is_portuguese and 'texto_en' in citacao_atual
+                else citacao_atual['texto']
             )
 
-        # Atualiza a citação atual se existir
-        if self.citacao_atual:
-            self.mostrar_citacao(self.citacao_atual)
+        # Atualiza os nomes das abas
+        self.notebook.delete(
+            "Citações" if not self.is_portuguese else "Quotes")
+        self.notebook.delete(
+            "Favoritos" if not self.is_portuguese else "Favorites")
 
-        # Atualiza a lista de favoritos
-        self.atualizar_favoritos()
-
-        # Atualiza o texto do botão de histórico
-        self.history_button.configure(
-            text="Histórico" if self.is_portuguese else "History"
+        self.main_frame = self.notebook.add(
+            "Citações" if self.is_portuguese else "Quotes"
+        )
+        self.favorites_frame = self.notebook.add(
+            "Favoritos" if self.is_portuguese else "Favorites"
         )
 
-        # Atualiza a janela de histórico se estiver aberta
-        if self.history_window is not None:
-            self.history_window.destroy()
-            self.history_window = None
-            self.show_history()  # Reabre a janela com o novo idioma
+        # Reconfigura as abas
+        self.configurar_aba_principal()
+        self.configurar_aba_favoritos()
 
-        # Atualiza os cabeçalhos da lista de favoritos
-        colunas = {
-            "Time": "Data/Hora" if self.is_portuguese else "Time",
-            "Quote": "Citação" if self.is_portuguese else "Quote",
-            "Author": "Autor" if self.is_portuguese else "Author",
-            "Category": "Categoria" if self.is_portuguese else "Category"
-        }
-
-        for col_id, header_text in colunas.items():
-            self.lista_favoritos.heading(col_id, text=header_text)
-
-        # Atualiza a lista de favoritos para mostrar os textos no idioma correto
-        self.atualizar_favoritos()
+        # Restaura o conteúdo após reconfigurar
+        if texto_atual:
+            self.texto_citacao.configure(state="normal")
+            self.texto_citacao.delete("1.0", tk.END)
+            self.texto_citacao.insert(
+                "1.0", f'"{texto_atual}"\n\n- {citacao_atual["autor"]}')
+            self.texto_citacao.configure(state="disabled")
 
     def on_category_change(self, choice):
         """Chamado quando uma nova categoria é selecionada"""
+        # Converte de volta para inglês se necessário
+        if self.is_portuguese:
+            # Encontra a chave (nome em inglês) pelo valor (nome em português)
+            for eng, pt in self.gerenciador.generos_traducoes.items():
+                if pt == choice:
+                    choice = eng
+                    break
+
         self.genero_var.set(choice)
         self.mostrar_citacao_dia()
 
@@ -393,21 +376,36 @@ class InterfaceCitacoes:
         )
         category_frame.pack(side=tk.LEFT, padx=10)
 
-        ctk.CTkLabel(
+        # Label para categoria com texto inicial baseado no idioma
+        self.category_label = ctk.CTkLabel(
             category_frame,
-            text="Choose quote category:",
+            text="Escolha a categoria:" if self.is_portuguese else "Choose quote category:",
             font=("Segoe UI", 12)
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.category_label.pack(side=tk.LEFT, padx=5)
+
+        # Traduz os gêneros se necessário
+        generos_traduzidos = [
+            self.gerenciador.generos_traducoes[genero] if self.is_portuguese else genero
+            for genero in self.generos
+        ]
 
         self.combo_generos = ctk.CTkOptionMenu(
             category_frame,
-            values=self.generos,
+            values=generos_traduzidos,
             command=self.on_category_change,
             width=150,
             font=("Segoe UI", 12)
         )
         self.combo_generos.pack(side=tk.LEFT, padx=5)
-        self.combo_generos.set(self.ultima_categoria)
+
+        # Define o valor inicial traduzido se necessário
+        valor_inicial = (
+            self.gerenciador.generos_traducoes[self.ultima_categoria]
+            if self.is_portuguese else self.ultima_categoria
+        )
+        self.combo_generos.set(valor_inicial)
+        # Mantém o valor em inglês internamente
         self.genero_var.set(self.ultima_categoria)
 
         # Frame para botões à direita
@@ -445,24 +443,24 @@ class InterfaceCitacoes:
         action_frame = ctk.CTkFrame(self.main_frame)
         action_frame.pack(pady=10)
 
-        # Botões de ação
+        # Botões de ação com textos traduzidos
         self.daily_quote_button = ctk.CTkButton(
             action_frame,
-            text="Daily Quote",
+            text="Citação Diária" if self.is_portuguese else "Daily Quote",
             command=self.mostrar_citacao_dia
         )
         self.daily_quote_button.pack(side=tk.LEFT, padx=5)
 
         self.new_quote_button = ctk.CTkButton(
             action_frame,
-            text="New Quote",
+            text="Nova Citação" if self.is_portuguese else "New Quote",
             command=self.nova_citacao_aleatoria
         )
         self.new_quote_button.pack(side=tk.LEFT, padx=5)
 
         self.favorite_button = ctk.CTkButton(
             action_frame,
-            text="Add to Favorites",
+            text="Adicionar aos Favoritos" if self.is_portuguese else "Add to Favorites",
             command=self.adicionar_favorito_atual
         )
         self.favorite_button.pack(side=tk.LEFT, padx=5)

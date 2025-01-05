@@ -42,19 +42,22 @@ class GerenciadorCitacoes:
         return os.path.join(self.diretorio_base, nome_arquivo)
 
     def carregar_generos(self):
-        # Lista de gêneros em inglês
-        return [
-            "Life",
-            "Wisdom",
-            "Success",
-            "Love",
-            "Happiness",
-            "Motivation",
-            "Leadership",
-            "Knowledge",
-            "Hope",
-            "Faith"
-        ]
+        # Lista de gêneros com suas traduções
+        self.generos_traducoes = {
+            "Life": "Vida",
+            "Wisdom": "Sabedoria",
+            "Success": "Sucesso",
+            "Love": "Amor",
+            "Happiness": "Felicidade",
+            "Motivation": "Motivação",
+            "Leadership": "Liderança",
+            "Knowledge": "Conhecimento",
+            "Hope": "Esperança",
+            "Faith": "Fé"
+        }
+
+        # Retorna apenas os nomes em inglês
+        return list(self.generos_traducoes.keys())
 
     def obter_citacao_por_genero(self, genero):
         # Lista de APIs em inglês
